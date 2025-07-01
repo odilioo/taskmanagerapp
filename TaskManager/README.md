@@ -1,36 +1,69 @@
-# Welcome to your Expo app 👋
+## Getting Started
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**1. Clone the repository:**
+```sh
+git clone https://github.com/odilioo/taskmanagerapp.git
+cd taskmanagerapp
+```
 
-## Get started
+**2. Install dependencies:**
+```sh
+npm install
+```
 
-1. Install dependencies
+**3. Start the app:**
+```sh
+npx expo start
+```
 
-   ```bash
-   npm install
-   ```
+- Open on your device with the Expo Go app, or use an emulator/simulator.
 
-2. Start the app
+---
 
-   ```bash
-   npx expo start
-   ```
+## Project Structure
 
-In the output, you'll find options to open the app in a
+```
+app/
+  (tabs)/
+    timeline.tsx       # Timeline & week bar UI
+    add.tsx            # Add task form
+    settings.tsx       # Settings screen
+    _layout.tsx        # Tab bar navigation
+  components/
+    TaskListScreen.js
+    TaskFormScreen.js
+  utils/
+    Storage.js         # AsyncStorage helper
+assets/
+```
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Dependencies
 
-## Get a fresh project
+- [Expo](https://expo.dev/)
+- [React Native](https://reactnative.dev/)
+- [date-fns](https://date-fns.org/)
+- [@react-native-picker/picker](https://github.com/react-native-picker/picker)
+- [expo-router](https://docs.expo.dev/router/introduction/)
+- [@expo/vector-icons](https://docs.expo.dev/guides/icons/)
 
-When you're ready, run:
+---
 
-```bash
-npm run reset-project
+## Customization
+
+- Change timeline colors, icons, and date bar styles in `/app/(tabs)/timeline.tsx`
+- Edit persistent storage logic in `/utils/Storage.js`
+
+---
+
+## License
+
+MIT
+
+---
+# 📅 TaskManager
+### Made with ❤️ by [odilio (2024655)](https://github.com/odilioo)
 ```
 
 This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
