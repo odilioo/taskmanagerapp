@@ -6,18 +6,19 @@ import {
   FlatList,
   ListRenderItemInfo,
   TouchableOpacity,
-  useColorScheme,
   Animated,
   Modal,
   TextInput,
   Platform,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Picker } from '@react-native-picker/picker';
 import { loadTasks, saveTasks } from '../../utils/Storage';
 import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { format, addDays, parseISO } from 'date-fns';
+import { format, addDays, parse, parseISO } from 'date-fns';
 import { startOfWeek, isSameDay } from 'date-fns';
 
 interface Task {
@@ -45,8 +46,9 @@ const priorityColors: Record<string, string> = {
 };
 
 export default function TimelineTaskScreen() {
-  const scheme = useColorScheme();
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [markedDates, setMarkedDates] = useState<MarkedDates>({});
@@ -72,7 +74,8 @@ export default function TimelineTaskScreen() {
 
       const marks: MarkedDates = {};
       loadedTasks.forEach((task: Task) => {
-        const date = task.dueDate ? task.dueDate.split('T')[0] : null;
+        // Expecting all dueDate to be in 'dd-MM-yyyy'
+        const date = task.dueDate ?? null;
         if (date) {
           if (!marks[date]) {
             marks[date] = { marked: true, dots: [{ key: `task-${task.id}`, color: 'blue' }] };
@@ -83,14 +86,24 @@ export default function TimelineTaskScreen() {
       });
       setMarkedDates(marks);
     }
+    if (isFocused) {
+      fetchTasks();
+    }
+  }, [isFocused]);
 
-    fetchTasks();
-  }, []);
+  useEffect(() => {
+    if (!isFocused) return;
+    AsyncStorage.getItem('user_theme').then(value => {
+      setIsDarkMode(value === 'dark');
+    });
+  }, [isFocused]);
 
   useEffect(() => {
     animateListChange();
     const filtered = tasks.filter(task => {
-      const matchesDate = task.dueDate ? task.dueDate.startsWith(selectedDate) : false;
+      // Match if the date part (first 10 chars) of dueDate matches selectedDate
+      const matchesDate =
+        (typeof task.dueDate === 'string' && task.dueDate.slice(0, 10) === selectedDate);
       const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
       return matchesDate && matchesStatus;
     });
@@ -107,25 +120,30 @@ export default function TimelineTaskScreen() {
   }
 
   function getTodayDate() {
-    const d = new Date();
-    return d.toISOString().split('T')[0];
+    return format(new Date(), 'dd-MM-yyyy');
   }
 
   function formatHeaderDate(dateStr: string) {
-    return format(parseISO(dateStr), 'EEEE, MMMM d');
+    // parse from 'dd-MM-yyyy'
+    const d = parse(dateStr, 'dd-MM-yyyy', new Date());
+    return format(d, 'EEEE, MMMM d');
   }
 
   function getWeekDates(current: string) {
-    const start = startOfWeek(parseISO(current), { weekStartsOn: 1 });
+    // current is 'dd-MM-yyyy'
+    const currDate = parse(current, 'dd-MM-yyyy', new Date());
+    const start = startOfWeek(currDate, { weekStartsOn: 1 });
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
   }
 
   const handlePrevDay = () => {
-    setSelectedDate(format(addDays(parseISO(selectedDate), -1), 'yyyy-MM-dd'));
+    const prev = addDays(parse(selectedDate, 'dd-MM-yyyy', new Date()), -1);
+    setSelectedDate(format(prev, 'dd-MM-yyyy'));
   };
 
   const handleNextDay = () => {
-    setSelectedDate(format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd'));
+    const next = addDays(parse(selectedDate, 'dd-MM-yyyy', new Date()), 1);
+    setSelectedDate(format(next, 'dd-MM-yyyy'));
   };
 
   const handleDeleteTask = async (taskId: string) => {
@@ -139,7 +157,7 @@ export default function TimelineTaskScreen() {
 
     const marks: MarkedDates = {};
     sanitizedTasks.forEach((task: Task) => {
-      const date = task.dueDate ? task.dueDate.split('T')[0] : null;
+      const date = task.dueDate ?? null;
       if (date) {
         if (!marks[date]) {
           marks[date] = { marked: true, dots: [{ key: `task-${task.id}`, color: 'blue' }] };
@@ -153,11 +171,27 @@ export default function TimelineTaskScreen() {
 
   const handleAddTask = async () => {
     if (!newTitle.trim()) return;
+    // Force newDate to be in 'dd-MM-yyyy'
+    let formattedDate = newDate;
+    // If input is not in dd-MM-yyyy, try to parse as ISO or yyyy-MM-dd and convert
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(newDate)) {
+      let parsed;
+      try {
+        if (/^\d{4}-\d{2}-\d{2}/.test(newDate)) {
+          parsed = parse(newDate, 'yyyy-MM-dd', new Date());
+        } else {
+          parsed = new Date(newDate);
+        }
+        formattedDate = format(parsed, 'dd-MM-yyyy');
+      } catch {
+        formattedDate = getTodayDate();
+      }
+    }
     const newTask: Task = {
       id: Date.now().toString(),
       title: newTitle,
       description: newDesc,
-      dueDate: newDate,
+      dueDate: formattedDate,
       status: 'pending',
       priority: newPriority,
     };
@@ -188,7 +222,23 @@ export default function TimelineTaskScreen() {
   };
 
   const renderTask = ({ item }: ListRenderItemInfo<Task>) => {
-    const dueTime = item.dueDate ? new Date(item.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    // Try to get time from dueDate if present (assume 'dd-MM-yyyy' or 'dd-MM-yyyy HH:mm')
+    let dueTime = '';
+    if (item.dueDate) {
+      // If dueDate has time, try to parse; else, blank
+      try {
+        // Try with time
+        let d;
+        if (/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}/.test(item.dueDate)) {
+          d = parse(item.dueDate, 'dd-MM-yyyy HH:mm', new Date());
+        } else {
+          d = parse(item.dueDate, 'dd-MM-yyyy', new Date());
+        }
+        dueTime = format(d, 'HH:mm');
+      } catch {
+        dueTime = '';
+      }
+    }
     const priorityColor = priorityColors[item.priority ?? ''] || '#888';
     return (
       <View style={styles.timelineRow}>
@@ -199,7 +249,7 @@ export default function TimelineTaskScreen() {
               styles.timelineDot,
               {
                 backgroundColor: item.status === 'completed' ? 'limegreen' : priorityColor,
-                borderColor: scheme === 'dark' ? '#222' : '#fff',
+                borderColor: isDarkMode ? '#222' : '#fff',
               },
             ]}
           />
@@ -210,21 +260,21 @@ export default function TimelineTaskScreen() {
         </Text>
         {/* Task Card */}
         <LinearGradient
-          colors={scheme === 'dark' ? ['#2c3e50', '#4ca1af'] : ['#ffffff', '#f0f0f0']}
+          colors={isDarkMode ? ['#2c3e50', '#4ca1af'] : ['#ffffff', '#f0f0f0']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.taskItem, { borderLeftColor: priorityColor, flex: 1, marginBottom: 20 }]}
         >
           <View style={styles.taskHeader}>
-            <Text style={[styles.taskTitle, { color: scheme === 'dark' ? '#fff' : '#111', fontSize: 17 }]} numberOfLines={1} ellipsizeMode="tail">
+            <Text style={[styles.taskTitle, { color: isDarkMode ? '#fff' : '#111', fontSize: 17 }]} numberOfLines={1} ellipsizeMode="tail">
               {item.title}
             </Text>
             <TouchableOpacity onPress={() => handleDeleteTask(item.id)}>
-              <MaterialIcons name="delete" size={22} color={scheme === 'dark' ? '#ff6b6b' : 'red'} />
+              <MaterialIcons name="delete" size={22} color={isDarkMode ? '#ff6b6b' : 'red'} />
             </TouchableOpacity>
           </View>
           {item.description ? (
-            <Text style={[styles.taskDescription, { color: scheme === 'dark' ? '#ddd' : '#555', fontSize: 14 }]} numberOfLines={2} ellipsizeMode="tail">
+            <Text style={[styles.taskDescription, { color: isDarkMode ? '#ddd' : '#555', fontSize: 14 }]} numberOfLines={2} ellipsizeMode="tail">
               {item.description}
             </Text>
           ) : null}
@@ -251,7 +301,7 @@ export default function TimelineTaskScreen() {
   // Get the current month/year for header
   const monthYear = (() => {
     try {
-      const d = parseISO(selectedDate);
+      const d = parse(selectedDate, 'dd-MM-yyyy', new Date());
       const month = format(d, 'MMMM');
       const year = format(d, 'yyyy');
       return { month, year };
@@ -264,7 +314,7 @@ export default function TimelineTaskScreen() {
     <View
       style={[
         styles.container,
-        { backgroundColor: scheme === 'dark' ? '#121212' : '#fff' }
+        { backgroundColor: isDarkMode ? '#121212' : '#fff' }
       ]}
     >
       {/* Header: Month/Year and week bar */}
@@ -272,11 +322,11 @@ export default function TimelineTaskScreen() {
         style={[
           styles.header,
           {
-            backgroundColor: scheme === 'dark' ? '#121212' : '#fff'
+            backgroundColor: isDarkMode ? '#121212' : '#fff'
           }
         ]}
       >
-        <Text style={styles.monthYearText}>
+        <Text style={[styles.monthYearText, { color: isDarkMode ? '#fff' : '#000' }]}>
           <Text style={styles.monthAccent}>{monthYear.month}</Text> {monthYear.year}
         </Text>
         <View style={styles.weekBar}>
@@ -285,10 +335,11 @@ export default function TimelineTaskScreen() {
             horizontal
             keyExtractor={item => item.toISOString()}
             renderItem={({ item }) => {
-              const selected = isSameDay(item, parseISO(selectedDate));
+              // selectedDate is 'dd-MM-yyyy'
+              const selected = isSameDay(item, parse(selectedDate, 'dd-MM-yyyy', new Date()));
               return (
                 <TouchableOpacity
-                  onPress={() => setSelectedDate(format(item, 'yyyy-MM-dd'))}
+                  onPress={() => setSelectedDate(format(item, 'dd-MM-yyyy'))}
                   style={[
                     styles.dayItem,
                     selected && { backgroundColor: '#4577EA', borderRadius: 24 }
@@ -320,7 +371,7 @@ export default function TimelineTaskScreen() {
         style={[
           styles.timelineSheet,
           {
-            backgroundColor: scheme === 'dark' ? '#232329' : '#f8f8fa'
+            backgroundColor: isDarkMode ? '#232329' : '#f8f8fa'
           }
         ]}
       >
@@ -336,7 +387,7 @@ export default function TimelineTaskScreen() {
               />
             ) : (
               <View style={styles.emptyContainer}>
-                <Text style={[styles.emptyText, { color: scheme === 'dark' ? '#888' : '#555' }]}>
+                <Text style={[styles.emptyText, { color: isDarkMode ? '#888' : '#555' }]}>
                   No tasks for {selectedDate}
                 </Text>
               </View>
@@ -348,7 +399,7 @@ export default function TimelineTaskScreen() {
       {/* Modal stays outside for overlay */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: scheme === 'dark' ? '#222' : '#fff' }]}>
+          <View style={[styles.modalContent, { backgroundColor: isDarkMode ? '#222' : '#fff' }]}>
             <Text style={styles.modalTitle}>Add Task</Text>
             <TextInput
               placeholder="Title"
@@ -365,7 +416,7 @@ export default function TimelineTaskScreen() {
               placeholderTextColor="#aaa"
             />
             <TextInput
-              placeholder="YYYY-MM-DD"
+              placeholder="DD-MM-YYYY"
               value={newDate}
               onChangeText={setNewDate}
               style={styles.input}
