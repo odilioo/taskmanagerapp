@@ -121,3 +121,7 @@ tsconfig.json
 
 ## License
 This project is licensed under the MIT License.
+
+# 📅 TaskManager
+### Made with ❤️ by [odilio (2024655)](https://github.com/odilioo)
+```
