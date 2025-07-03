@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, TouchableOpacity, Text, ScrollView, Image, TextInput, Modal, Platform, Button } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Text, ScrollView, Image, TextInput, Modal, Platform, Button, SafeAreaView } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { loadTasks, saveTasks } from '../../utils/Storage';
 import { format, parseISO } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
+import * as Notifications from 'expo-notifications';
 
 interface Task {
   id: string;
@@ -30,6 +31,7 @@ export default function HomeScreen() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [pickerDate, setPickerDate] = useState<Date>(new Date());
   const [pickMode, setPickMode] = useState<'date' | 'time'>('date');
+  const [dueNotification, setDueNotification] = useState<Notifications.Notification | null>(null);
 
   useEffect(() => {
     if (!isFocused) return;
@@ -61,6 +63,13 @@ export default function HomeScreen() {
     fetch();
   }, [isFocused]);
 
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      setDueNotification(notification);
+    });
+    return () => subscription.remove();
+  }, []);
+
   const openDetail = (task: Task) => {
     setSelectedTask(task);
     setPickerDate(parseISO(task.dueDate));
@@ -88,7 +97,19 @@ export default function HomeScreen() {
   const textColor = isDarkMode ? '#fff' : '#000';
 
   return (
-    <View style={[styles.container, { backgroundColor: isDarkMode ? '#232329' : '#fff3f3' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDarkMode ? '#232329' : '#fff3f3' }]}>
+      {dueNotification && (
+        <View style={[styles.alertBanner, isDarkMode ? styles.alertBannerDark : styles.alertBannerLight]}>
+          <Text style={[styles.alertText, { color: isDarkMode ? '#fff' : '#000' }]}>
+            🔔 {dueNotification.request.content.title}: {dueNotification.request.content.body}
+          </Text>
+          <TouchableOpacity onPress={() => setDueNotification(null)}>
+            <Text style={[styles.dismissText, { color: isDarkMode ? '#aaa' : '#555' }]}>
+              Dismiss
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <LinearGradient
         colors={['#ff9696', '#ffb7b7']}
         style={styles.topCard}
@@ -209,7 +230,7 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -363,5 +384,36 @@ const styles = StyleSheet.create({
     width: '80%',
     padding: 20,
     borderRadius: 12,
+  },
+  alertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    marginTop: 8,
+    borderRadius: 8,
+    elevation: 4,           // Android shadow
+    shadowColor: '#000',    // iOS shadow
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  alertBannerLight: {
+    backgroundColor: '#FFF9C4',
+  },
+  alertBannerDark: {
+    backgroundColor: '#4E342E',
+  },
+  alertText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  dismissText: {
+    marginLeft: 12,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

@@ -14,7 +14,20 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+
+import { loadTasks } from '../../utils/Storage';
+import * as Notifications from 'expo-notifications';
+import { parse } from 'date-fns';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldSetBadge: false,
+  }),
+});
 
 const STORAGE_KEYS = {
   avatar: 'user_avatar',
@@ -83,7 +96,6 @@ const SECTIONS: { title: string; data: SectionItem[] }[] = [
 ];
 
 export default function SettingsScreen() {
-  const router = useRouter();
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [username, setUsername] = useState<string>('');
   // Handler for username input change and persistence
@@ -92,6 +104,14 @@ export default function SettingsScreen() {
     await AsyncStorage.setItem(STORAGE_KEYS.username, text);
   };
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+
+  // Load saved preferences when screen appears
+  useEffect(() => {
+    AsyncStorage.getItem('notifications_enabled').then(val => {
+      setNotificationsEnabled(val === 'true');
+    });
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -128,26 +148,77 @@ export default function SettingsScreen() {
     await AsyncStorage.setItem(STORAGE_KEYS.theme, value ? 'dark' : 'light');
   };
 
-  const renderItem = ({ item }: { item: SectionItem }) => (
-    <TouchableOpacity
-      style={styles.row}
-      onPress={() => {
-        switch (item.key) {
-          case 'Notifications':
-            router.push('/notifications');
-            break;
-          default:
-            Alert.alert(item.label, 'This feature is coming soon.');
-        }
-      }}
-    >
-      <Ionicons name={item.icon as any} size={24} color={isDarkMode ? '#fff' : '#333'} style={styles.rowIcon} />
-      <Text style={[styles.rowLabel, isDarkMode && styles.textDark]}>{item.label}</Text>
-      {item.badge && <View style={styles.badge} />}
-      {item.rightLabel && <Text style={styles.rowRight}>{item.rightLabel}</Text>}
-      <MaterialIcons name="chevron-right" size={20} color={isDarkMode ? '#888' : '#aaa'} />
-    </TouchableOpacity>
-  );
+interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  dueDate: string;
+  status: string;
+  priority: string;
+}
+
+const toggleNotificationsEnabled = async (value: boolean) => {
+    setNotificationsEnabled(value);
+    await AsyncStorage.setItem('notifications_enabled', value ? 'true' : 'false');
+
+    if (value) {
+      // Request permission
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Enable notifications in Settings');
+        return;
+      }
+      // Schedule existing pending tasks
+      const tasks: Task[] = await loadTasks();
+      tasks
+        .filter((t: Task) => t.status === 'pending')
+        .forEach(async (t: Task) => {
+          const dt = parse(t.dueDate, 'dd-MM-yyyy HH:mm', new Date());
+          const sec = Math.max(1, Math.floor((dt.getTime() - Date.now()) / 1000));
+          await Notifications.scheduleNotificationAsync({
+            content: { title: 'Task Due', body: t.title, data: { taskId: t.id } },
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: sec, repeats: false },
+          });
+        });
+    } else {
+      await Notifications.cancelAllScheduledNotificationsAsync();
+    }
+  };
+
+  const renderItem = ({ item }: { item: SectionItem }) => {
+    switch (item.key) {
+      case 'Notifications':
+        return (
+          <View style={[styles.notificationRow, { backgroundColor: isDarkMode ? '#333' : '#F5F5F5' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="notifications-outline" size={24} color={isDarkMode ? '#fff' : '#333'} style={{ marginRight: 12 }} />
+              <Text style={[styles.notificationLabel, { color: isDarkMode ? '#fff' : '#333' }]}>Notifications</Text>
+            </View>
+            <Switch
+              value={notificationsEnabled}
+              onValueChange={toggleNotificationsEnabled}
+              thumbColor={notificationsEnabled ? '#ff9696' : '#ccc'}
+              trackColor={{ false: '#767577', true: '#ffb7b7' }}
+            />
+          </View>
+        );
+      default:
+        return (
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => {
+              Alert.alert(item.label, 'This feature is coming soon.');
+            }}
+          >
+            <Ionicons name={item.icon as any} size={24} color={isDarkMode ? '#fff' : '#333'} style={styles.rowIcon} />
+            <Text style={[styles.rowLabel, isDarkMode && styles.textDark]}>{item.label}</Text>
+            {item.badge && <View style={styles.badge} />}
+            {item.rightLabel && <Text style={styles.rowRight}>{item.rightLabel}</Text>}
+            <MaterialIcons name="chevron-right" size={20} color={isDarkMode ? '#888' : '#aaa'} />
+          </TouchableOpacity>
+        );
+    }
+  };
 
   return (
     <LinearGradient
@@ -215,4 +286,17 @@ const styles = StyleSheet.create({
   rowRight: { color: '#888', marginRight: 8 },
   listContent: { paddingBottom: 40 },
   textDark: { color: '#fff' },
+  notificationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginVertical: 8,
+  },
+  notificationLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });

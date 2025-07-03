@@ -20,6 +20,7 @@ import { saveTasks, loadTasks } from '../../utils/Storage'; // adjust import pat
 import { format } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 
 export default function AddScreen() {
   const router = useRouter();
@@ -68,6 +69,24 @@ export default function AddScreen() {
     };
     const updatedTasks = [...tasks, newTask];
     await saveTasks(updatedTasks);
+    // If high priority and notifications enabled, schedule a reminder
+    const notifPref = await AsyncStorage.getItem('notifications_enabled');
+    if (priority === 'high' && notifPref === 'true') {
+      const dt = pickedDate;
+      const interval = Math.max(1, Math.floor((dt.getTime() - Date.now()) / 1000));
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Task Reminder',
+          body: newTask.title,
+          data: { taskId: newTask.id },
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: interval,
+          repeats: false,
+        },
+      });
+    }
     setSaving(false);
     router.replace('/timeline'); // Go back to tasks tab
   }
