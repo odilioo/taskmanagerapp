@@ -26,6 +26,7 @@ export default function HomeScreen() {
   const [username, setUsername] = useState<string>('');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const isFocused = useIsFocused();
+  const [accentColor, setAccentColor] = useState('#ff9696');
 
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -70,6 +71,13 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, []);
 
+  useEffect(() => {
+    if (!isFocused) return;
+    AsyncStorage.getItem('user_accent').then(val => {
+      if (val) setAccentColor(val);
+    });
+  }, [isFocused]);
+
   const openDetail = (task: Task) => {
     setSelectedTask(task);
     setPickerDate(parseISO(task.dueDate));
@@ -111,7 +119,7 @@ export default function HomeScreen() {
         </View>
       )}
       <LinearGradient
-        colors={['#ff9696', '#ffb7b7']}
+        colors={[accentColor, '#ffb7b7']}
         style={styles.topCard}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -148,6 +156,7 @@ export default function HomeScreen() {
                 {
                   backgroundColor: isDarkMode ? '#2A2A2A' : '#FFFFFF',
                   borderColor: '#40DA5A',
+                  shadowColor: accentColor,
                 },
               ]}
             >
@@ -172,7 +181,7 @@ export default function HomeScreen() {
                     },
                   ]}
                 >
-                  <Text style={[styles.priorityText, { color: '#ff9696' }]}>
+                  <Text style={[styles.priorityText, { color: accentColor }]}>
                     {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
                   </Text>
                 </View>
@@ -191,7 +200,10 @@ export default function HomeScreen() {
             key={task.id}
             style={[
               styles.taskCard,
-              { backgroundColor: isDarkMode ? '#2A2A2A' : '#FFFFFF' },
+              {
+                backgroundColor: isDarkMode ? '#2A2A2A' : '#FFFFFF',
+                shadowColor: accentColor,
+              },
             ]}
           >
             <Text style={[styles.taskTitle, { color: isDarkMode ? '#fff' : '#000' }]}>{task.title}</Text>
@@ -307,7 +319,6 @@ const styles = StyleSheet.create({
     padding: 16,
     marginRight: 16,
     width: 210,
-    shadowColor: '#ff9696',
     shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 3 },
     shadowRadius: 8,
@@ -359,7 +370,6 @@ const styles = StyleSheet.create({
     padding: 20,
     marginHorizontal: 16,
     marginBottom: 22,
-    shadowColor: '#ff9696',
     shadowOpacity: 0.09,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 8,

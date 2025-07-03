@@ -9,6 +9,9 @@ import {
   Switch,
   Alert,
   TextInput,
+  Modal,
+  Button,
+  FlatList,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -33,6 +36,7 @@ const STORAGE_KEYS = {
   avatar: 'user_avatar',
   username: 'user_name',
   theme: 'user_theme',
+  accent: 'user_accent',
 };
 
 interface SectionItem {
@@ -106,6 +110,9 @@ export default function SettingsScreen() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
+  const [accentColor, setAccentColor] = useState<string>('#ff9696');
+  const [showCustomization, setShowCustomization] = useState(false);
+
   // Load saved preferences when screen appears
   useEffect(() => {
     AsyncStorage.getItem('notifications_enabled').then(val => {
@@ -120,9 +127,11 @@ export default function SettingsScreen() {
         AsyncStorage.getItem(STORAGE_KEYS.username),
         AsyncStorage.getItem(STORAGE_KEYS.theme),
       ]);
+      const savedAccent = await AsyncStorage.getItem(STORAGE_KEYS.accent);
       if (savedAvatar) setAvatarUri(savedAvatar);
       if (savedName) setUsername(savedName);
       if (savedTheme) setIsDarkMode(savedTheme === 'dark');
+      if (savedAccent) setAccentColor(savedAccent);
     })();
   }, []);
 
@@ -185,6 +194,13 @@ const toggleNotificationsEnabled = async (value: boolean) => {
     }
   };
 
+  const colorOptions = ['#ff9696', '#4CAF50', '#2196F3', '#FFC107', '#9C27B0'];
+  const selectAccent = async (color: string) => {
+    setAccentColor(color);
+    await AsyncStorage.setItem(STORAGE_KEYS.accent, color);
+    setShowCustomization(false);
+  };
+
   const renderItem = ({ item }: { item: SectionItem }) => {
     switch (item.key) {
       case 'Notifications':
@@ -201,6 +217,21 @@ const toggleNotificationsEnabled = async (value: boolean) => {
               trackColor={{ false: '#767577', true: '#ffb7b7' }}
             />
           </View>
+        );
+      case 'Customization':
+        return (
+          <TouchableOpacity
+            style={[styles.notificationRow, { backgroundColor: isDarkMode ? '#333' : '#F5F5F5' }]}
+            onPress={() => setShowCustomization(true)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name={item.icon as any} size={24} color={isDarkMode ? '#fff' : '#333'} style={{ marginRight: 12 }} />
+              <Text style={[styles.notificationLabel, { color: isDarkMode ? '#fff' : '#333' }]}>
+                {item.label}
+              </Text>
+            </View>
+            <View style={[styles.colorSwatch, { backgroundColor: accentColor }]} />
+          </TouchableOpacity>
         );
       default:
         return (
@@ -255,6 +286,30 @@ const toggleNotificationsEnabled = async (value: boolean) => {
         )}
         contentContainerStyle={styles.listContent}
       />
+
+      {showCustomization && (
+        <Modal transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: isDarkMode ? '#232329' : '#fff' }]}>
+              <Text style={[styles.modalTitle, isDarkMode && styles.textDark]}>
+                Select Accent Color
+              </Text>
+              <FlatList
+                data={colorOptions}
+                numColumns={5}
+                keyExtractor={c => c}
+                renderItem={({ item: color }) => (
+                  <TouchableOpacity
+                    style={[styles.colorSwatch, { backgroundColor: color, borderWidth: color === accentColor ? 2 : 0 }]}
+                    onPress={() => selectAccent(color)}
+                  />
+                )}
+              />
+              <Button title="Cancel" onPress={() => setShowCustomization(false)} />
+            </View>
+          </View>
+        </Modal>
+      )}
     </LinearGradient>
   );
 }
@@ -298,5 +353,28 @@ const styles = StyleSheet.create({
   notificationLabel: {
     fontSize: 16,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    width: '80%',
+    padding: 20,
+    borderRadius: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  colorSwatch: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    margin: 8,
   },
 });
